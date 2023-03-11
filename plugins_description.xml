@@ -1,0 +1,7 @@
+<library path="rviz_lifecycle_plugin">
+
+    <class name="rviz_lifecycle_plugin RvizLifecyclePlugin" type="rviz_lifecycle_plugin::RvizLifecyclePlugin" base_class_type="rviz_common::Panel">
+        <description>Plugin to monitor lifecycle nodes status.</description>
+    </class>
+
+</library>

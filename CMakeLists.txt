@@ -7,6 +7,7 @@ endif()
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set (CMAKE_CXX_STANDARD 20)
 
 find_package(ament_cmake REQUIRED)
 find_package(pluginlib REQUIRED)
@@ -16,6 +17,7 @@ find_package(rviz_common REQUIRED)
 find_package(rviz_default_plugins REQUIRED)
 find_package(rviz_rendering REQUIRED)
 find_package(cmr_clients_utils REQUIRED)
+find_package(lifecycle_msgs REQUIRED)
 
 include_directories(include)
 
@@ -36,6 +38,7 @@ set(dependencies
     rviz_default_plugins
     rviz_rendering
     cmr_clients_utils
+    lifecycle_msgs
 )
 
 ament_target_dependencies(${library_name}

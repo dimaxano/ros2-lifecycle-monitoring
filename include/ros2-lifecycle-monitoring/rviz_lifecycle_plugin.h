@@ -39,6 +39,12 @@ namespace rviz_lifecycle_plugin
         */
         LifecycleState get_lifecycle_node_state(const std::string& node_name);
 
+
+        /*
+        *  Updates the table widget at given row. If row does not exist, a new row is created
+        */
+        void update_table_widget(const size_t row, const std::string& node_name, const LifecycleState& state);
+
         /*
         * Creates a client for the serivce /node_name/get_state and stores it in the clients_ map
         */
@@ -57,7 +63,7 @@ namespace rviz_lifecycle_plugin
 
         // QT
         QVBoxLayout *main_layout_;
-        QListWidget *node_names_;
+        QTableWidget *node_names_;
         QScrollArea *scroll_area_;
         
         // store fully qualified node names

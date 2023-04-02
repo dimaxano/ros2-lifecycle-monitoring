@@ -10,25 +10,25 @@ namespace rviz_lifecycle_plugin
         utility_node_ = rclcpp::Node::make_shared("rviz_lifecycle_plugin");
 
         main_layout_ = new QVBoxLayout(this);
-        node_names_ = new QListWidget(this);
+        node_names_ = new QTableWidget(1, 2, this);
         scroll_area_ = new QScrollArea(this);
 
         lifecycle_nodes_ = {};
         get_lifecycle_node_names(lifecycle_nodes_);
 
-        clients_ = {};
         for(const auto& node_name : lifecycle_nodes_){
             add_client(node_name);
         }
 
+        size_t idx = 0;
         for(const auto& node_name : lifecycle_nodes_){
             auto state = get_lifecycle_node_state(node_name);
 
-            std::stringstream ss;
             lifecycle_node_states_[node_name] = state;
-            ss << node_name << " - " << "\t\t" << state.label;
 
-            node_names_->addItem(QString::fromStdString(ss.str()));
+            update_table_widget(idx, node_name, state);
+        
+            idx++;
         }
 
         scroll_area_->setWidget(node_names_);
@@ -98,6 +98,19 @@ namespace rviz_lifecycle_plugin
         }
     }
 
+    void RvizLifecyclePlugin::update_table_widget(const size_t row, const std::string& node_name, const LifecycleState& state) {
+        if((row + 1) > (size_t)node_names_->rowCount()){
+            node_names_->insertRow(row); // TODO: first row is empty, this is a bug
+
+            node_names_->setCellWidget(row, 0, new QLabel(QString::fromStdString(node_name)));
+            node_names_->setCellWidget(row, 1, new QLabel(QString::fromStdString(state.label)));
+        } else {
+            // TODO: write QLabel update logic
+        }
+
+        
+    }
+
     void RvizLifecyclePlugin::add_client(const std::string& fully_qualified_name){
         if(!clients_.contains(fully_qualified_name)){
             std::string node_name;
@@ -114,7 +127,7 @@ namespace rviz_lifecycle_plugin
     {
         rviz_common::Panel::onInitialize();
 
-        this->monitoring_thread_ = std::make_shared<std::thread>(&RvizLifecyclePlugin::monitoring, this);
+        // this->monitoring_thread_ = std::make_shared<std::thread>(&RvizLifecyclePlugin::monitoring, this);
     }
 
     // check node state every second and update UI
@@ -130,7 +143,7 @@ namespace rviz_lifecycle_plugin
                     lifecycle_node_states_[node_name] = state;
                     ss << node_name << " - " << "\t\t" << state.label;
 
-                    node_names_->item(idx)->setText(QString::fromStdString(ss.str()));
+                    // node_names_->item(idx)->setText(QString::fromStdString(ss.str()));
                 }
 
                 idx++;

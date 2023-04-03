@@ -10,7 +10,7 @@ namespace rviz_lifecycle_plugin
         utility_node_ = rclcpp::Node::make_shared("rviz_lifecycle_plugin");
 
         main_layout_ = new QVBoxLayout(this);
-        node_names_ = new QTableWidget(1, 2, this);
+        node_names_ = new QTableWidget(0, 2, this);
         scroll_area_ = new QScrollArea(this);
 
         lifecycle_nodes_ = {};

@@ -37,8 +37,6 @@ namespace rviz_lifecycle_plugin
         main_layout_->addWidget(scroll_area_);
 
         this->setLayout(main_layout_);
-
-        // QObject::connect(this->toggle_pause_button_, SIGNAL(clicked()), this, SLOT(on_toggle_paused_pressed()));
     }
 
     RvizLifecyclePlugin::~RvizLifecyclePlugin() {}
@@ -99,13 +97,16 @@ namespace rviz_lifecycle_plugin
     }
 
     void RvizLifecyclePlugin::update_table_widget(const size_t row, const std::string& node_name, const LifecycleState& state) {
-        if((row + 1) > (size_t)node_names_->rowCount()){
-            node_names_->insertRow(row); // TODO: first row is empty, this is a bug
+        if(row >= (size_t)node_names_->rowCount()){
+            node_names_->insertRow(row);
 
             node_names_->setCellWidget(row, 0, new QLabel(QString::fromStdString(node_name)));
             node_names_->setCellWidget(row, 1, new QLabel(QString::fromStdString(state.label)));
         } else {
-            // TODO: write QLabel update logic
+            auto node_status_label = dynamic_cast<QLabel*>(node_names_->cellWidget(row, 1));
+            if(node_status_label && node_status_label->text().toStdString() != state.label){
+                node_status_label->setText(QString::fromStdString(state.label));
+            }
         }
 
         
@@ -127,7 +128,7 @@ namespace rviz_lifecycle_plugin
     {
         rviz_common::Panel::onInitialize();
 
-        // this->monitoring_thread_ = std::make_shared<std::thread>(&RvizLifecyclePlugin::monitoring, this);
+        this->monitoring_thread_ = std::make_shared<std::thread>(&RvizLifecyclePlugin::monitoring, this);
     }
 
     // check node state every second and update UI
@@ -138,15 +139,9 @@ namespace rviz_lifecycle_plugin
             for(const auto& node_name : lifecycle_nodes_){
                 auto state = get_lifecycle_node_state(node_name);
 
-                std::stringstream ss;
-                if(state.label != lifecycle_node_states_[node_name].label){
-                    lifecycle_node_states_[node_name] = state;
-                    ss << node_name << " - " << "\t\t" << state.label;
-
-                    // node_names_->item(idx)->setText(QString::fromStdString(ss.str()));
-                }
-
-                idx++;
+                update_table_widget(idx, node_name, state);
+                
+                idx++;   
             }
 
             std::this_thread::sleep_for(monitoring_interval_);

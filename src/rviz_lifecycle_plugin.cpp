@@ -101,15 +101,31 @@ namespace rviz_lifecycle_plugin
             node_names_->insertRow(row);
 
             node_names_->setCellWidget(row, 0, new QLabel(QString::fromStdString(node_name)));
-            node_names_->setCellWidget(row, 1, new QLabel(QString::fromStdString(state.label)));
+
+            auto node_status_label = new QLabel(QString::fromStdString(state.label));
+            set_label_color(node_status_label, state);
+
+            node_names_->setCellWidget(row, 1, node_status_label);
         } else {
             auto node_status_label = dynamic_cast<QLabel*>(node_names_->cellWidget(row, 1));
             if(node_status_label && node_status_label->text().toStdString() != state.label){
                 node_status_label->setText(QString::fromStdString(state.label));
+                
+                set_label_color(node_status_label, state);
             }
         }
+    }
 
-        
+    void RvizLifecyclePlugin::set_label_color(QLabel* label, const LifecycleState& state){
+        std::stringstream ss;
+        if(state_to_color_.contains(state.id)){
+            ss << "QLabel { color: " << state_to_color_[state.id] << ";}";
+            label->setStyleSheet(ss.str().c_str());
+        } 
+        else {
+            ss << "QLabel { color: " << default_color_ << ";}";
+            label->setStyleSheet(ss.str().c_str());
+        }
     }
 
     void RvizLifecyclePlugin::add_client(const std::string& fully_qualified_name){

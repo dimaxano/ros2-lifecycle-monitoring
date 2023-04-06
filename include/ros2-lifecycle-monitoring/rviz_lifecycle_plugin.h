@@ -46,6 +46,11 @@ namespace rviz_lifecycle_plugin
         void update_table_widget(const size_t row, const std::string& node_name, const LifecycleState& state);
 
         /*
+        *  Set color of the label according to the state of the lifecycle node
+        */
+        void set_label_color(QLabel* label, const LifecycleState& state);
+
+        /*
         * Creates a client for the serivce /node_name/get_state and stores it in the clients_ map
         */
         void add_client(const std::string& fully_qualified_name);
@@ -72,6 +77,15 @@ namespace rviz_lifecycle_plugin
 
         // store the state of the lifecycle nodes to be able to provide it immediately by request, future development of CLI tool
         std::unordered_map<std::string, LifecycleState> lifecycle_node_states_;
+
+        std::unordered_map<uint8_t, std::string> state_to_color_ = {
+            {0, "#FF3838"}, // red
+            {1, "#FFB302"}, // yellow
+            {2, "#FCE83A"}, // light yellow
+            {3, "#008000"}, // green
+        };
+        const std::string default_color_ = "#000000"; // black
+           
 
         std::shared_ptr<std::thread> monitoring_thread_;
         const std::chrono::milliseconds monitoring_interval_ = std::chrono::milliseconds(1000);

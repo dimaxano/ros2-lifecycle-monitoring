@@ -1,5 +1,7 @@
 #include <iostream>
 #include <sstream>
+
+#include <rclcpp/executors/multi_threaded_executor.hpp>
 #include "ros2-lifecycle-monitoring/rviz_lifecycle_plugin.h"
 
 namespace rviz_lifecycle_plugin
@@ -10,28 +12,29 @@ namespace rviz_lifecycle_plugin
         utility_node_ = rclcpp::Node::make_shared("rviz_lifecycle_plugin");
 
         main_layout_ = new QVBoxLayout(this);
-        node_names_ = new QTableWidget(0, 2, this);
+        nodes_states_table_ = new QTableWidget(0, 2, this);
         scroll_area_ = new QScrollArea(this);
 
-        lifecycle_nodes_ = {};
-        get_lifecycle_node_names(lifecycle_nodes_);
+        lifecycle_nodes_names_ = {};
+        get_lifecycle_node_names(lifecycle_nodes_names_);
 
-        for(const auto& node_name : lifecycle_nodes_){
-            add_client(node_name);
-        }
+        RCLCPP_INFO(utility_node_->get_logger(), "Found %d lifecycle nodes", lifecycle_nodes_names_.size());
 
         size_t idx = 0;
-        for(const auto& node_name : lifecycle_nodes_){
-            auto state = get_lifecycle_node_state(node_name);
-
-            lifecycle_node_states_[node_name] = state;
+        for(const auto& node_name : lifecycle_nodes_names_){
+            auto state = LifecycleState();
 
             update_table_widget(idx, node_name, state);
         
             idx++;
         }
+        for(const auto& fq_node_name : lifecycle_nodes_names_){
+            add_client(fq_node_name);
+        }
 
-        scroll_area_->setWidget(node_names_);
+        RCLCPP_INFO(utility_node_->get_logger(), "Created %d clients", clients_.size());
+
+        scroll_area_->setWidget(nodes_states_table_);
         scroll_area_->setWidgetResizable(true);
 
         main_layout_->addWidget(scroll_area_);
@@ -79,35 +82,32 @@ namespace rviz_lifecycle_plugin
         }
     }
 
-    LifecycleState RvizLifecyclePlugin::get_lifecycle_node_state(const std::string& fully_qualified_name){
-        std::string node_name;
-        std::string node_namespace;
-        get_node_name_and_namespace(fully_qualified_name, node_name, node_namespace);
-
-        auto client = clients_[node_name];
+    // TODO: call it request_lifecycle_node_state maybe
+    void RvizLifecyclePlugin::get_lifecycle_node_state(const std::string& fully_qualified_name){
+        auto client = clients_[fully_qualified_name];
         auto request = std::make_shared<lifecycle_msgs::srv::GetState::Request>();
+
+        RCLCPP_INFO(utility_node_->get_logger(), "Sending request for %s", fully_qualified_name.c_str());
         
-        auto response = client->send_request(request);
-        if(response){
-            return response->current_state;
-        }
-        else {
-            return LifecycleState();
-        }
+        // TODO: add callback groups
+        client->async_send_request(request, [this, fully_qualified_name](GetStateClient::SharedFuture response){
+                std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
+                lifecycle_node_states_[fully_qualified_name] = response.get()->current_state;
+            });
     }
 
     void RvizLifecyclePlugin::update_table_widget(const size_t row, const std::string& node_name, const LifecycleState& state) {
-        if(row >= (size_t)node_names_->rowCount()){
-            node_names_->insertRow(row);
+        if(row >= (size_t)nodes_states_table_->rowCount()){
+            nodes_states_table_->insertRow(row);
 
-            node_names_->setCellWidget(row, 0, new QLabel(QString::fromStdString(node_name)));
+            nodes_states_table_->setCellWidget(row, 0, new QLabel(QString::fromStdString(node_name)));
 
             auto node_status_label = new QLabel(QString::fromStdString(state.label));
             set_label_color(node_status_label, state);
 
-            node_names_->setCellWidget(row, 1, node_status_label);
+            nodes_states_table_->setCellWidget(row, 1, node_status_label);
         } else {
-            auto node_status_label = dynamic_cast<QLabel*>(node_names_->cellWidget(row, 1));
+            auto node_status_label = dynamic_cast<QLabel*>(nodes_states_table_->cellWidget(row, 1));
             if(node_status_label && node_status_label->text().toStdString() != state.label){
                 node_status_label->setText(QString::fromStdString(state.label));
                 
@@ -118,7 +118,7 @@ namespace rviz_lifecycle_plugin
 
     void RvizLifecyclePlugin::set_label_color(QLabel* label, const LifecycleState& state){
         std::stringstream ss;
-        if(state_to_color_.contains(state.id)){
+        if(state_to_color_.find(state.id) != state_to_color_.end()){
             ss << "QLabel { color: " << state_to_color_[state.id] << ";}";
             label->setStyleSheet(ss.str().c_str());
         } 
@@ -128,39 +128,69 @@ namespace rviz_lifecycle_plugin
         }
     }
 
-    void RvizLifecyclePlugin::add_client(const std::string& fully_qualified_name){
-        if(!clients_.contains(fully_qualified_name)){
+    void RvizLifecyclePlugin::add_client(const std::string& fully_qualified_node_name){
+        if(clients_.find(fully_qualified_node_name) == clients_.end()){
             std::string node_name;
             std::string node_namespace;
-            get_node_name_and_namespace(fully_qualified_name, node_name, node_namespace);
+            get_node_name_and_namespace(fully_qualified_node_name, node_name, node_namespace);
 
             std::string client_name = node_name + "_client";
-            std::string service_name = fully_qualified_name + "/get_state";
-            clients_[node_name] = std::make_shared<GetStateClient>(client_name, service_name);
+            std::string service_name = fully_qualified_node_name + "/get_state";
+            clients_[fully_qualified_node_name] = utility_node_->create_client<lifecycle_msgs::srv::GetState>(service_name);
         }
     }
 
-    void RvizLifecyclePlugin::onInitialize()
-    {
+    void RvizLifecyclePlugin::onInitialize() {
         rviz_common::Panel::onInitialize();
 
-        this->monitoring_thread_ = std::make_shared<std::thread>(&RvizLifecyclePlugin::monitoring, this);
+        spinner_thred_ = std::make_shared<std::thread>([this](){
+            rclcpp::executors::MultiThreadedExecutor executor;
+            executor.add_node(utility_node_);
+            executor.spin();
+        });
+
+        monitoring_thread_ = std::make_shared<std::thread>(&RvizLifecyclePlugin::monitoring, this);
+
+        update_ui_thread_ = std::make_shared<std::thread>(&RvizLifecyclePlugin::update_ui, this);
     }
 
-    // check node state every second and update UI
-    void RvizLifecyclePlugin::monitoring()
-    {
-        while(true){
-            size_t idx = 0;
-            for(const auto& node_name : lifecycle_nodes_){
-                auto state = get_lifecycle_node_state(node_name);
+    // TODO: setup a timer to remove pending requests to the lifecycle nodes
 
-                update_table_widget(idx, node_name, state);
-                
-                idx++;   
+    // check node state every second and update UI
+    void RvizLifecyclePlugin::monitoring() {
+        while(true){
+            for(const auto& node_name : lifecycle_nodes_names_) {
+                get_lifecycle_node_state(node_name);
             }
 
             std::this_thread::sleep_for(monitoring_interval_);
+        }
+    }
+
+    void RvizLifecyclePlugin::update_ui() {
+        while(true){
+            {
+                std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
+             
+                RCLCPP_INFO(utility_node_->get_logger(), "Updating UI");
+             
+                size_t idx = 0;
+                for(const auto& kv : lifecycle_node_states_){
+                    auto fq_node_name = kv.first;
+                    auto state = kv.second;
+
+                    std::string node_name;
+                    std::string node_namespace;
+                    get_node_name_and_namespace(fq_node_name, node_name, node_namespace);
+
+                    update_table_widget(idx, node_name, state);
+
+                    idx++;
+                }
+                
+            }
+
+            std::this_thread::sleep_for(update_ui_interval_);
         }
     }
 }

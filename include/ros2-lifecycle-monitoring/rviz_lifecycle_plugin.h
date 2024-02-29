@@ -12,12 +12,9 @@
 #include "lifecycle_msgs/srv/get_state.hpp"
 #include "lifecycle_msgs/msg/state.hpp"
 
-#include "cmr_clients_utils/basic_action_client.hpp"
-#include "cmr_clients_utils/basic_service_client.hpp"
-
 namespace rviz_lifecycle_plugin
 {
-    typedef typename cmr_clients_utils::BasicServiceClient<lifecycle_msgs::srv::GetState> GetStateClient;
+    typedef typename rclcpp::Client<lifecycle_msgs::srv::GetState> GetStateClient;
     typedef typename lifecycle_msgs::msg::State LifecycleState;
 
     class RvizLifecyclePlugin : public rviz_common::Panel
@@ -35,9 +32,9 @@ namespace rviz_lifecycle_plugin
         void get_lifecycle_node_names(std::vector<std::string>& lifecycle_node_names);
         
         /*
-        *  Returns the status of the lifecycle nodes
+        *  Requests the status of the lifecycle node
         */
-        LifecycleState get_lifecycle_node_state(const std::string& node_name);
+        void get_lifecycle_node_state(const std::string& node_name);
 
 
         /*
@@ -55,6 +52,7 @@ namespace rviz_lifecycle_plugin
         */
         void add_client(const std::string& fully_qualified_name);
         void monitoring();
+        void update_ui();
 
         void get_node_name_and_namespace(
             const std::string& fully_qualified_name,
@@ -68,11 +66,11 @@ namespace rviz_lifecycle_plugin
 
         // QT
         QVBoxLayout *main_layout_;
-        QTableWidget *node_names_;
+        QTableWidget *nodes_states_table_;
         QScrollArea *scroll_area_;
         
         // store fully qualified node names
-        std::vector<std::string> lifecycle_nodes_;
+        std::vector<std::string> lifecycle_nodes_names_;
         std::unordered_map<std::string, std::shared_ptr<GetStateClient>> clients_;
 
         // store the state of the lifecycle nodes to be able to provide it immediately by request, future development of CLI tool
@@ -88,7 +86,11 @@ namespace rviz_lifecycle_plugin
            
 
         std::shared_ptr<std::thread> monitoring_thread_;
-        const std::chrono::milliseconds monitoring_interval_ = std::chrono::milliseconds(1000);
+        std::shared_ptr<std::thread> update_ui_thread_;
+        std::shared_ptr<std::thread> spinner_thred_;
+        const std::chrono::milliseconds monitoring_interval_ = std::chrono::milliseconds(5000);
+        const std::chrono::milliseconds update_ui_interval_ = std::chrono::milliseconds(1000);
+        std::mutex lifecycle_node_states_mutex_;
     };
 }
 

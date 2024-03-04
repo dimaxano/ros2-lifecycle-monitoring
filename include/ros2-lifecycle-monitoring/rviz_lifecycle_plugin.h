@@ -78,9 +78,16 @@ namespace rviz_lifecycle_plugin
 
         std::unordered_map<uint8_t, std::string> state_to_color_ = {
             {0, "#FF3838"}, // red
-            {1, "#FFB302"}, // yellow
-            {2, "#FCE83A"}, // light yellow
+            {1, "#FFB302"}, // orange
+            {2, "#CCCCCC"}, // grey
             {3, "#008000"}, // green
+            {4, "#000000"}, // black
+            {10, "#FFD700"}, // gold
+            {11, "#B5651D"}, // brown
+            {12, "#4B0082"}, // indigo
+            {13, "#32CD32"}, // lime green
+            {14, "#808080"}, // dark grey
+            {15, "#FF4500"}, // orange red
         };
         const std::string default_color_ = "#000000"; // black
            

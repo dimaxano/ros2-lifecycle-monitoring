@@ -6,9 +6,7 @@
 
 namespace rviz_lifecycle_plugin
 {
-    RvizLifecyclePlugin::RvizLifecyclePlugin(QWidget *parent) : 
-        Panel(parent)
-    {
+    RvizLifecyclePlugin::RvizLifecyclePlugin(QWidget *parent): Panel(parent) {
         utility_node_ = rclcpp::Node::make_shared("rviz_lifecycle_plugin");
 
         main_layout_ = new QVBoxLayout(this);
@@ -18,21 +16,15 @@ namespace rviz_lifecycle_plugin
         lifecycle_nodes_names_ = {};
         get_lifecycle_node_names(lifecycle_nodes_names_);
 
-        RCLCPP_INFO(utility_node_->get_logger(), "Found %d lifecycle nodes", lifecycle_nodes_names_.size());
-
         size_t idx = 0;
-        for(const auto& node_name : lifecycle_nodes_names_){
-            auto state = LifecycleState();
+        for(const auto& fully_qualified_node_name : lifecycle_nodes_names_){
+            add_client(fully_qualified_node_name);
 
-            update_table_widget(idx, node_name, state);
+            auto state = LifecycleState();
+            update_table_widget(idx, fully_qualified_node_name, state);
         
             idx++;
         }
-        for(const auto& fq_node_name : lifecycle_nodes_names_){
-            add_client(fq_node_name);
-        }
-
-        RCLCPP_INFO(utility_node_->get_logger(), "Created %d clients", clients_.size());
 
         scroll_area_->setWidget(nodes_states_table_);
         scroll_area_->setWidgetResizable(true);
@@ -82,14 +74,10 @@ namespace rviz_lifecycle_plugin
         }
     }
 
-    // TODO: call it request_lifecycle_node_state maybe
-    void RvizLifecyclePlugin::get_lifecycle_node_state(const std::string& fully_qualified_name){
+    void RvizLifecyclePlugin::request_lifecycle_node_state(const std::string& fully_qualified_name){
         auto client = clients_[fully_qualified_name];
         auto request = std::make_shared<lifecycle_msgs::srv::GetState::Request>();
-
-        RCLCPP_INFO(utility_node_->get_logger(), "Sending request for %s", fully_qualified_name.c_str());
         
-        // TODO: add callback groups
         client->async_send_request(request, [this, fully_qualified_name](GetStateClient::SharedFuture response){
                 std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
                 lifecycle_node_states_[fully_qualified_name] = response.get()->current_state;
@@ -134,7 +122,6 @@ namespace rviz_lifecycle_plugin
             std::string node_namespace;
             get_node_name_and_namespace(fully_qualified_node_name, node_name, node_namespace);
 
-            std::string client_name = node_name + "_client";
             std::string service_name = fully_qualified_node_name + "/get_state";
             clients_[fully_qualified_node_name] = utility_node_->create_client<lifecycle_msgs::srv::GetState>(service_name);
         }
@@ -154,15 +141,11 @@ namespace rviz_lifecycle_plugin
         update_ui_thread_ = std::make_shared<std::thread>(&RvizLifecyclePlugin::update_ui, this);
     }
 
-    // TODO: setup a timer to remove pending requests to the lifecycle nodes
-
-    // check node state every second and update UI
     void RvizLifecyclePlugin::monitoring() {
         while(true){
             for(const auto& node_name : lifecycle_nodes_names_) {
-                get_lifecycle_node_state(node_name);
+                request_lifecycle_node_state(node_name);
             }
-
             std::this_thread::sleep_for(monitoring_interval_);
         }
     }
@@ -171,17 +154,15 @@ namespace rviz_lifecycle_plugin
         while(true){
             {
                 std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
-             
-                RCLCPP_INFO(utility_node_->get_logger(), "Updating UI");
-             
+                          
                 size_t idx = 0;
                 for(const auto& kv : lifecycle_node_states_){
-                    auto fq_node_name = kv.first;
+                    auto fully_qualified_node_name = kv.first;
                     auto state = kv.second;
 
                     std::string node_name;
                     std::string node_namespace;
-                    get_node_name_and_namespace(fq_node_name, node_name, node_namespace);
+                    get_node_name_and_namespace(fully_qualified_node_name, node_name, node_namespace);
 
                     update_table_widget(idx, node_name, state);
 

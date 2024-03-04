@@ -34,7 +34,7 @@ namespace rviz_lifecycle_plugin
         /*
         *  Requests the status of the lifecycle node
         */
-        void get_lifecycle_node_state(const std::string& node_name);
+        void request_lifecycle_node_state(const std::string& node_name);
 
 
         /*

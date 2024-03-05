@@ -13,7 +13,6 @@
   <depend>rclcpp</depend>
   <depend>rviz_common</depend>
   <depend>lifecycle_msgs</depend>
-  <depend>cmr_clients_utils</depend>
   
   <exec_depend>libqt5-core</exec_depend>
   <exec_depend>libqt5-gui</exec_depend>

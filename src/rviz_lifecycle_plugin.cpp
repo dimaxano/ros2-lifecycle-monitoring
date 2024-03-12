@@ -13,18 +13,14 @@ namespace rviz_lifecycle_plugin
         nodes_states_table_ = new QTableWidget(0, 2, this);
         scroll_area_ = new QScrollArea(this);
 
-        lifecycle_nodes_names_ = {};
-        get_lifecycle_node_names(lifecycle_nodes_names_);
+        // thread_ = new QThread();
 
-        size_t idx = 0;
-        for(const auto& fully_qualified_node_name : lifecycle_nodes_names_){
-            add_client(fully_qualified_node_name);
+        // connect(thread_, &QThread::started, this, &RvizLifecyclePlugin::update_ui);
+        // connect(thread_, &QThread::finished, this, &RvizLifecyclePlugin::deleteLater);
 
-            auto state = LifecycleState();
-            update_table_widget(idx, fully_qualified_node_name, state);
-        
-            idx++;
-        }
+        timer_ = new QTimer(this);
+        connect(timer_, &QTimer::timeout, this, QOverload<>::of(&RvizLifecyclePlugin::update_ui_timer));
+        timer_->start(1000);
 
         scroll_area_->setWidget(nodes_states_table_);
         scroll_area_->setWidgetResizable(true);
@@ -34,7 +30,15 @@ namespace rviz_lifecycle_plugin
         this->setLayout(main_layout_);
     }
 
-    RvizLifecyclePlugin::~RvizLifecyclePlugin() {}
+    RvizLifecyclePlugin::~RvizLifecyclePlugin() {
+        // thread_->quit();
+        // thread_->wait();
+
+        monitoring_thread_->join();
+        spinner_thred_->join();
+
+        // delete thread_;
+    }
 
     void RvizLifecyclePlugin::get_node_name_and_namespace(
         const std::string& fully_qualified_name,
@@ -138,40 +142,78 @@ namespace rviz_lifecycle_plugin
 
         monitoring_thread_ = std::make_shared<std::thread>(&RvizLifecyclePlugin::monitoring, this);
 
-        update_ui_thread_ = std::make_shared<std::thread>(&RvizLifecyclePlugin::update_ui, this);
+        // thread_->start();
+        // thread_->setPriority(QThread::LowPriority);
     }
 
     void RvizLifecyclePlugin::monitoring() {
         while(true){
+            RCLCPP_INFO(utility_node_->get_logger(), "Monitoring lifecycle nodes");
+
+            {
+                std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
+                lifecycle_nodes_names_ = {};
+                get_lifecycle_node_names(lifecycle_nodes_names_);
+
+                for(const auto& node_name : lifecycle_nodes_names_) {
+                    add_client(node_name);
+                }
+            }
+
             for(const auto& node_name : lifecycle_nodes_names_) {
                 request_lifecycle_node_state(node_name);
             }
+
+            RCLCPP_INFO(utility_node_->get_logger(), "Monitoring lifecycle nodes DONE");
             std::this_thread::sleep_for(monitoring_interval_);
         }
     }
 
     void RvizLifecyclePlugin::update_ui() {
         while(true){
-            {
-                std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
+            // {   
+            //     std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
+
+            //     RCLCPP_INFO(utility_node_->get_logger(), "Updating UI");
                           
-                size_t idx = 0;
-                for(const auto& kv : lifecycle_node_states_){
-                    auto fully_qualified_node_name = kv.first;
-                    auto state = kv.second;
+            //     size_t idx = 0;
+            //     for(const auto& kv : lifecycle_node_states_){
+            //         auto fully_qualified_node_name = kv.first;
+            //         auto state = kv.second;
 
-                    std::string node_name;
-                    std::string node_namespace;
-                    get_node_name_and_namespace(fully_qualified_node_name, node_name, node_namespace);
+            //         std::string node_name;
+            //         std::string node_namespace;
+            //         get_node_name_and_namespace(fully_qualified_node_name, node_name, node_namespace);
 
-                    update_table_widget(idx, node_name, state);
+            //         update_table_widget(idx, node_name, state);
 
-                    idx++;
-                }
+            //         idx++;
+            //     }
                 
-            }
+            // }
 
             std::this_thread::sleep_for(update_ui_interval_);
+        }
+    }
+
+    void RvizLifecyclePlugin::update_ui_timer() {
+        RCLCPP_INFO(utility_node_->get_logger(), "Updating UI - 1");
+        std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
+
+        RCLCPP_INFO(utility_node_->get_logger(), "Updating UI");
+                    
+        size_t idx = 0;
+        for(const auto& kv : lifecycle_node_states_){
+            auto fully_qualified_node_name = kv.first;
+            auto state = kv.second;
+
+            std::string node_name;
+            std::string node_namespace;
+            get_node_name_and_namespace(fully_qualified_node_name, node_name, node_namespace);
+
+            update_table_widget(idx, node_name, state);
+
+            idx++;
         }
     }
 }

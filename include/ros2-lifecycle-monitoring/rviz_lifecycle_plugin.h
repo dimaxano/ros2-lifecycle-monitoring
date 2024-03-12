@@ -53,6 +53,7 @@ namespace rviz_lifecycle_plugin
         void add_client(const std::string& fully_qualified_name);
         void monitoring();
         void update_ui();
+        void update_ui_timer();
 
         void get_node_name_and_namespace(
             const std::string& fully_qualified_name,
@@ -68,6 +69,8 @@ namespace rviz_lifecycle_plugin
         QVBoxLayout *main_layout_;
         QTableWidget *nodes_states_table_;
         QScrollArea *scroll_area_;
+        QThread* thread_;
+        QTimer *timer_;
         
         // store fully qualified node names
         std::vector<std::string> lifecycle_nodes_names_;

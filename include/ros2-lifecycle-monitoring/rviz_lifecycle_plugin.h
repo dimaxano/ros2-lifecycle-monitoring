@@ -27,15 +27,14 @@ namespace rviz_lifecycle_plugin
     private:
         
         /*
-        *  Returns the fully qualified name of the lifecycle nodes
+        *  Update list clients to fetch the state of the lifecycle nodes
         */
-        void get_lifecycle_node_names(std::vector<std::string>& lifecycle_node_names);
+        void update_lifecycle_clients();
         
         /*
         *  Requests the status of the lifecycle node
         */
         void request_lifecycle_node_state(const std::string& node_name);
-
 
         /*
         *  Updates the table widget at given row. If row does not exist, a new row is created
@@ -47,13 +46,8 @@ namespace rviz_lifecycle_plugin
         */
         void set_label_color(QLabel* label, const LifecycleState& state);
 
-        /*
-        * Creates a client for the serivce /node_name/get_state and stores it in the clients_ map
-        */
-        void add_client(const std::string& fully_qualified_name);
         void monitoring();
         void update_ui();
-        void update_ui_timer();
 
         void get_node_name_and_namespace(
             const std::string& fully_qualified_name,
@@ -73,8 +67,7 @@ namespace rviz_lifecycle_plugin
         QTimer *timer_;
         
         // store fully qualified node names
-        std::vector<std::string> lifecycle_nodes_names_;
-        std::unordered_map<std::string, std::shared_ptr<GetStateClient>> clients_;
+        std::unordered_map<std::string, std::shared_ptr<GetStateClient>> lifecycle_clients_;
 
         // store the state of the lifecycle nodes to be able to provide it immediately by request, future development of CLI tool
         std::unordered_map<std::string, LifecycleState> lifecycle_node_states_;

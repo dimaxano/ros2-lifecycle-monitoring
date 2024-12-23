@@ -39,7 +39,7 @@ namespace rviz_lifecycle_plugin
 
     void RvizLifecyclePlugin::get_node_name_and_namespace(
         const std::string& fully_qualified_name,
-        std::string& name, 
+        std::string& name,
         std::string& name_space){
 
         auto pos = fully_qualified_name.rfind("/");
@@ -57,6 +57,13 @@ namespace rviz_lifecycle_plugin
         for(const auto& kv : lifecycle_clients_){
             lifecycle_clients_[kv.first] = nullptr;
         }
+        for(const auto& kv : controller_clients_){
+            controller_clients_[kv.first] = nullptr;
+        }
+        for(const auto& kv : hw_components_clients_){
+            hw_components_clients_[kv.first] = nullptr;
+        }
+
 
         auto node_names = utility_node_->get_node_names();
         for(auto& fully_qualified_name : node_names){
@@ -65,8 +72,9 @@ namespace rviz_lifecycle_plugin
             get_node_name_and_namespace(fully_qualified_name, node_name, node_namespace);
 
             auto services_names_types = utility_node_->get_service_names_and_types_by_node(node_name, node_namespace);
-            
+
             bool lifecycle_found = false;
+            bool controller_manager_found = false;
             for(const auto& kv : services_names_types){
                 for(const auto& type_name : kv.second){
                     if(type_name.find("lifecycle") != std::string::npos){
@@ -79,16 +87,30 @@ namespace rviz_lifecycle_plugin
 
                         lifecycle_found = true;
                         break;
+                    } else if (type_name.find("controller_manager") != std::string::npos) {
+                        std::string node_name;
+                        std::string node_namespace;
+                        get_node_name_and_namespace(fully_qualified_name, node_name, node_namespace);
+
+                        std::string service_name = fully_qualified_name + "/list_controllers";
+                        controller_clients_[fully_qualified_name] = utility_node_->create_client<controller_manager_msgs::srv::ListControllers>(service_name);
+
+                        service_name = fully_qualified_name + "/list_hardware_components";
+                        hw_components_clients_[fully_qualified_name] = utility_node_->create_client<controller_manager_msgs::srv::ListHardwareComponents>(service_name);
+
+                        controller_manager_found = true;
+                        break;
                     }
                 }
                 if(lifecycle_found) break;
+                if(controller_manager_found) break;
             }
         }
     }
 
     void RvizLifecyclePlugin::request_lifecycle_node_state(const std::string& fully_qualified_name){
         auto client = lifecycle_clients_[fully_qualified_name];
-        
+
         // If client is not available, we set the state to unknown
         if(!client){
             std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
@@ -97,10 +119,44 @@ namespace rviz_lifecycle_plugin
         }
 
         auto request = std::make_shared<lifecycle_msgs::srv::GetState::Request>();
-        
+
         client->async_send_request(request, [this, fully_qualified_name](GetStateClient::SharedFuture response){
                 std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
                 lifecycle_node_states_[fully_qualified_name] = response.get()->current_state;
+            });
+    }
+
+    void RvizLifecyclePlugin::request_controller_state(const std::string& fully_qualified_name){
+        auto client = controller_clients_[fully_qualified_name];
+
+        // If client is not available, we set the state to unknown
+        if(!client){
+            std::lock_guard<std::mutex> lock(controller_states_mutex_);
+            controller_states_[fully_qualified_name] = std::vector<ControllerState>(controller_states_[fully_qualified_name].size());
+            return;
+        }
+
+        auto request = std::make_shared<controller_manager_msgs::srv::ListControllers::Request>();
+        client->async_send_request(request, [this, fully_qualified_name](ListControllerClient::SharedFuture response){
+                std::lock_guard<std::mutex> lock(controller_states_mutex_);
+                controller_states_[fully_qualified_name] = response.get()->controller;
+            });
+    }
+
+    void RvizLifecyclePlugin::request_hardware_state(const std::string& fully_qualified_name){
+        auto client = hw_components_clients_[fully_qualified_name];
+
+        // If client is not available, we set the state to unknown
+        if(!client){
+            std::lock_guard<std::mutex> lock(hw_components_states_mutex_);
+            hw_components_states_[fully_qualified_name] = std::vector<HardwareComponentsState>(hw_components_states_[fully_qualified_name].size());
+            return;
+        }
+
+        auto request = std::make_shared<controller_manager_msgs::srv::ListHardwareComponents::Request>();
+        client->async_send_request(request, [this, fully_qualified_name](ListHardwareComponentsClient::SharedFuture response){
+                std::lock_guard<std::mutex> lock(hw_components_states_mutex_);
+                hw_components_states_[fully_qualified_name] = response.get()->component;
             });
     }
 
@@ -118,7 +174,48 @@ namespace rviz_lifecycle_plugin
             auto node_status_label = dynamic_cast<QLabel*>(nodes_states_table_->cellWidget(row, 1));
             if(node_status_label && node_status_label->text().toStdString() != state.label){
                 node_status_label->setText(QString::fromStdString(state.label));
-                
+
+                set_label_color(node_status_label, state);
+            }
+        }
+    }
+    void RvizLifecyclePlugin::update_table_widget(const size_t row, const ControllerState& state) {
+
+        if(row >= (size_t)nodes_states_table_->rowCount()){
+            nodes_states_table_->insertRow(row);
+
+            nodes_states_table_->setCellWidget(row, 0, new QLabel(QString::fromStdString(state.name)));
+
+            auto node_status_label = new QLabel(QString::fromStdString(state.state));
+            set_label_color(node_status_label, state);
+
+            nodes_states_table_->setCellWidget(row, 1, node_status_label);
+        } else {
+            auto node_status_label = dynamic_cast<QLabel*>(nodes_states_table_->cellWidget(row, 1));
+            if(node_status_label && node_status_label->text().toStdString() != state.state){
+                node_status_label->setText(QString::fromStdString(state.state));
+
+                set_label_color(node_status_label, state);
+            }
+        }
+    }
+
+    void RvizLifecyclePlugin::update_table_widget(const size_t row, const HardwareComponentsState& state) {
+
+        if(row >= (size_t)nodes_states_table_->rowCount()){
+            nodes_states_table_->insertRow(row);
+
+            nodes_states_table_->setCellWidget(row, 0, new QLabel(QString::fromStdString(state.name)));
+
+            auto node_status_label = new QLabel(QString::fromStdString(state.state.label));
+            set_label_color(node_status_label, state);
+
+            nodes_states_table_->setCellWidget(row, 1, node_status_label);
+        } else {
+            auto node_status_label = dynamic_cast<QLabel*>(nodes_states_table_->cellWidget(row, 1));
+            if(node_status_label && node_status_label->text().toStdString() != state.state.label){
+                node_status_label->setText(QString::fromStdString(state.state.label));
+
                 set_label_color(node_status_label, state);
             }
         }
@@ -129,7 +226,31 @@ namespace rviz_lifecycle_plugin
         if(state_to_color_.find(state.id) != state_to_color_.end()){
             ss << "QLabel { color: " << state_to_color_[state.id] << ";}";
             label->setStyleSheet(ss.str().c_str());
-        } 
+        }
+        else {
+            ss << "QLabel { color: " << default_color_ << ";}";
+            label->setStyleSheet(ss.str().c_str());
+        }
+    }
+
+    void RvizLifecyclePlugin::set_label_color(QLabel* label, const ControllerState& state){
+        std::stringstream ss;
+        if(controller_state_to_color_.find(state.state) != controller_state_to_color_.end()){
+            ss << "QLabel { color: " << controller_state_to_color_[state.state] << ";}";
+            label->setStyleSheet(ss.str().c_str());
+        }
+        else {
+            ss << "QLabel { color: " << default_color_ << ";}";
+            label->setStyleSheet(ss.str().c_str());
+        }
+    }
+
+    void RvizLifecyclePlugin::set_label_color(QLabel* label, const HardwareComponentsState& state){
+        std::stringstream ss;
+        if(state_to_color_.find(state.state.id) != state_to_color_.end()){
+            ss << "QLabel { color: " << state_to_color_[state.state.id] << ";}";
+            label->setStyleSheet(ss.str().c_str());
+        }
         else {
             ss << "QLabel { color: " << default_color_ << ";}";
             label->setStyleSheet(ss.str().c_str());
@@ -155,6 +276,12 @@ namespace rviz_lifecycle_plugin
             for(const auto& kv : lifecycle_clients_){
                 request_lifecycle_node_state(kv.first);
             }
+            for(const auto& kv : controller_clients_){
+                request_controller_state(kv.first);
+            }
+            for(const auto& kv : hw_components_clients_){
+                request_hardware_state(kv.first);
+            }
 
             std::this_thread::sleep_for(monitoring_interval_);
         }
@@ -162,7 +289,7 @@ namespace rviz_lifecycle_plugin
 
     void RvizLifecyclePlugin::update_ui() {
         std::lock_guard<std::mutex> lock(lifecycle_node_states_mutex_);
-                    
+
         size_t idx = 0;
         for(const auto& kv : lifecycle_node_states_){
             auto fully_qualified_node_name = kv.first;
@@ -176,5 +303,32 @@ namespace rviz_lifecycle_plugin
 
             idx++;
         }
+        for(const auto& kv : controller_states_){
+            auto fully_qualified_node_name = kv.first;
+            auto states = kv.second;
+
+            std::string node_name;
+            std::string node_namespace;
+            get_node_name_and_namespace(fully_qualified_node_name, node_name, node_namespace);
+
+            for(const auto& state : states){
+              update_table_widget(idx, state);
+              idx++;
+            }
+        }
+        for(const auto& kv : hw_components_states_){
+            auto fully_qualified_node_name = kv.first;
+            auto states = kv.second;
+
+            std::string node_name;
+            std::string node_namespace;
+            get_node_name_and_namespace(fully_qualified_node_name, node_name, node_namespace);
+
+            for(const auto& state : states){
+              update_table_widget(idx, state);
+              idx++;
+            }
+        }
+
     }
 }

@@ -17,6 +17,7 @@ find_package(rviz_common REQUIRED)
 find_package(rviz_default_plugins REQUIRED)
 find_package(rviz_rendering REQUIRED)
 find_package(lifecycle_msgs REQUIRED)
+find_package(controller_manager_msgs REQUIRED)
 
 include_directories(include)
 
@@ -37,6 +38,7 @@ set(dependencies
     rviz_default_plugins
     rviz_rendering
     lifecycle_msgs
+    controller_manager_msgs
 )
 
 ament_target_dependencies(${library_name}
